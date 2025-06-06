@@ -1,24 +1,29 @@
-const OpenAI = require('openai')
-const config = require('../config')
-const logger = require('../utils/logger')
+import OpenAI from 'openai'
+import config from '../config'
+import logger from '../utils/logger'
+import { ConversationMessage, IntentAnalysis, AIGenerationOptions, AIStats } from '../types'
 
-class AIService {
+export class AIService {
+  private client: OpenAI
+  private logger: typeof logger
+  private conversationHistory: Map<string, ConversationMessage[]>
+
   constructor() {
     this.client = new OpenAI({
       apiKey: config.openai.apiKey
     })
     this.logger = logger.child({ service: 'ai' })
-    this.conversationHistory = new Map() // Store conversation history by call ID
+    this.conversationHistory = new Map()
   }
 
   /**
    * Generate AI response for conversation
-   * @param {string} userMessage - User's message/transcript
-   * @param {string} callId - Unique call identifier
-   * @param {Object} options - Additional options
-   * @returns {Promise<string>} AI response
    */
-  async generateResponse(userMessage, callId, options = {}) {
+  async generateResponse(
+    userMessage: string, 
+    callId: string, 
+    options: AIGenerationOptions = {}
+  ): Promise<string> {
     try {
       const systemPrompt = options.systemPrompt || this.getDefaultSystemPrompt()
       const maxTokens = options.maxTokens || config.openai.maxTokens
@@ -30,13 +35,17 @@ class AIService {
       // Add user message to history
       history.push({
         role: 'user',
-        content: userMessage
+        content: userMessage,
+        timestamp: new Date()
       })
 
       // Prepare messages for OpenAI
-      const messages = [
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
-        ...history
+        ...history.map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content
+        }))
       ]
 
       this.logger.info('Generating AI response', {
@@ -62,7 +71,8 @@ class AIService {
       // Add AI response to history
       history.push({
         role: 'assistant',
-        content: aiResponse
+        content: aiResponse,
+        timestamp: new Date()
       })
 
       // Update conversation history (keep last 20 messages to manage token usage)
@@ -79,7 +89,7 @@ class AIService {
       this.logger.error('Failed to generate AI response', {
         callId,
         userMessage: userMessage.substring(0, 100),
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
@@ -87,24 +97,31 @@ class AIService {
 
   /**
    * Generate streaming AI response
-   * @param {string} userMessage - User's message
-   * @param {string} callId - Call identifier
-   * @param {Function} onChunk - Callback for each response chunk
-   * @param {Object} options - Additional options
-   * @returns {Promise<string>} Complete response
    */
-  async generateStreamingResponse(userMessage, callId, onChunk, options = {}) {
+  async generateStreamingResponse(
+    userMessage: string, 
+    callId: string, 
+    onChunk: (chunk: string) => void, 
+    options: AIGenerationOptions = {}
+  ): Promise<string> {
     try {
       const systemPrompt = options.systemPrompt || this.getDefaultSystemPrompt()
       const maxTokens = options.maxTokens || config.openai.maxTokens
       const temperature = options.temperature || config.openai.temperature
 
       let history = this.conversationHistory.get(callId) || []
-      history.push({ role: 'user', content: userMessage })
+      history.push({ 
+        role: 'user', 
+        content: userMessage, 
+        timestamp: new Date() 
+      })
 
-      const messages = [
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
-        ...history
+        ...history.map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content
+        }))
       ]
 
       this.logger.info('Generating streaming AI response', {
@@ -131,7 +148,11 @@ class AIService {
       }
 
       // Add complete response to history
-      history.push({ role: 'assistant', content: fullResponse })
+      history.push({ 
+        role: 'assistant', 
+        content: fullResponse, 
+        timestamp: new Date() 
+      })
       this.conversationHistory.set(callId, history.slice(-20))
 
       this.logger.info('Streaming AI response completed', {
@@ -143,7 +164,7 @@ class AIService {
     } catch (error) {
       this.logger.error('Failed to generate streaming AI response', {
         callId,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
@@ -151,11 +172,8 @@ class AIService {
 
   /**
    * Analyze user intent from transcript
-   * @param {string} transcript - User's speech transcript
-   * @param {string} callId - Call identifier
-   * @returns {Promise<Object>} Intent analysis
    */
-  async analyzeIntent(transcript, callId) {
+  async analyzeIntent(transcript: string, callId: string): Promise<IntentAnalysis> {
     try {
       const prompt = `
         Analyze the following user message and extract:
@@ -184,7 +202,11 @@ class AIService {
       })
 
       const response = completion.choices[0]?.message?.content
-      const analysis = JSON.parse(response)
+      if (!response) {
+        throw new Error('No analysis response from AI')
+      }
+
+      const analysis: IntentAnalysis = JSON.parse(response)
 
       this.logger.info('Intent analysis completed', {
         callId,
@@ -197,7 +219,7 @@ class AIService {
       this.logger.error('Intent analysis failed', {
         callId,
         transcript: transcript.substring(0, 100),
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       
       // Return default analysis on error
@@ -213,27 +235,63 @@ class AIService {
 
   /**
    * Clear conversation history for a call
-   * @param {string} callId - Call identifier
    */
-  clearConversationHistory(callId) {
+  clearConversationHistory(callId: string): void {
     this.conversationHistory.delete(callId)
     this.logger.info('Cleared conversation history', { callId })
   }
 
   /**
    * Get conversation history for a call
-   * @param {string} callId - Call identifier
-   * @returns {Array} Conversation history
    */
-  getConversationHistory(callId) {
+  getConversationHistory(callId: string): ConversationMessage[] {
     return this.conversationHistory.get(callId) || []
   }
 
   /**
-   * Get default system prompt for AI assistant
-   * @returns {string} System prompt
+   * Get conversation summary
    */
-  getDefaultSystemPrompt() {
+  async getConversationSummary(callId: string): Promise<string> {
+    try {
+      const history = this.getConversationHistory(callId)
+      if (history.length === 0) {
+        return 'No conversation to summarize'
+      }
+
+      const conversation = history
+        .map(msg => `${msg.role}: ${msg.content}`)
+        .join('\n')
+
+      const prompt = `Summarize this conversation in 2-3 sentences:
+
+${conversation}
+
+Summary:`
+
+      const completion = await this.client.chat.completions.create({
+        model: config.openai.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 100,
+        temperature: 0.5
+      })
+
+      const summary = completion.choices[0]?.message?.content || 'Unable to generate summary'
+      
+      this.logger.info('Generated conversation summary', { callId })
+      return summary.trim()
+    } catch (error) {
+      this.logger.error('Failed to generate conversation summary', {
+        callId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return 'Error generating summary'
+    }
+  }
+
+  /**
+   * Get default system prompt for AI assistant
+   */
+  getDefaultSystemPrompt(): string {
     return `You are a helpful AI assistant handling phone calls. Your responses should be:
     - Natural and conversational
     - Concise (1-2 sentences max)
@@ -253,10 +311,9 @@ class AIService {
 
   /**
    * Get conversation statistics
-   * @returns {Object} Statistics about active conversations
    */
-  getStats() {
-    const stats = {
+  getStats(): AIStats {
+    const stats: AIStats = {
       activeConversations: this.conversationHistory.size,
       totalMessages: 0
     }
@@ -267,6 +324,27 @@ class AIService {
 
     return stats
   }
-}
 
-module.exports = AIService
+  /**
+   * Cleanup old conversations (call periodically)
+   */
+  cleanupOldConversations(maxAgeHours: number = 24): void {
+    const cutoffTime = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000)
+    let cleanedCount = 0
+
+    for (const [callId, history] of this.conversationHistory.entries()) {
+      const lastMessage = history[history.length - 1]
+      if (lastMessage?.timestamp && lastMessage.timestamp < cutoffTime) {
+        this.conversationHistory.delete(callId)
+        cleanedCount++
+      }
+    }
+
+    if (cleanedCount > 0) {
+      this.logger.info('Cleaned up old conversations', { 
+        cleanedCount, 
+        maxAgeHours 
+      })
+    }
+  }
+}

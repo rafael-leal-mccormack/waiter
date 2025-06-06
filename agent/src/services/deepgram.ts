@@ -1,8 +1,12 @@
-const { createClient } = require('@deepgram/sdk')
-const config = require('../config')
-const logger = require('../utils/logger')
+import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk'
+import config from '../config'
+import logger from '../utils/logger'
+import { DeepgramEventHandlers, DeepgramTranscriptResult } from '../types'
 
-class DeepgramService {
+export class DeepgramService {
+  private client: ReturnType<typeof createClient>
+  private logger: typeof logger
+
   constructor() {
     this.client = createClient(config.deepgram.apiKey)
     this.logger = logger.child({ service: 'deepgram' })
@@ -10,10 +14,8 @@ class DeepgramService {
 
   /**
    * Create a real-time transcription connection
-   * @param {Object} options - Additional configuration options
-   * @returns {Object} Deepgram live connection
    */
-  createLiveTranscription(options = {}) {
+  createLiveTranscription(options: Record<string, any> = {}) {
     const connectionOptions = {
       ...config.deepgram.config,
       ...options
@@ -29,7 +31,7 @@ class DeepgramService {
       return connection
     } catch (error) {
       this.logger.error('Failed to create Deepgram connection', {
-        error: error.message,
+        error: error instanceof Error ? error.message : 'Unknown error',
         options: connectionOptions
       })
       throw error
@@ -38,10 +40,11 @@ class DeepgramService {
 
   /**
    * Setup event handlers for live transcription
-   * @param {Object} connection - Deepgram connection
-   * @param {Object} handlers - Event handler functions
    */
-  setupEventHandlers(connection, handlers = {}) {
+  setupEventHandlers(
+    connection: ReturnType<typeof this.createLiveTranscription>, 
+    handlers: DeepgramEventHandlers = {}
+  ): void {
     const {
       onTranscript = () => {},
       onError = () => {},
@@ -50,22 +53,22 @@ class DeepgramService {
       onMetadata = () => {}
     } = handlers
 
-    connection.on('open', () => {
+    connection.on(LiveTranscriptionEvents.Open, () => {
       this.logger.info('Deepgram connection opened')
       onOpen()
     })
 
-    connection.on('close', () => {
+    connection.on(LiveTranscriptionEvents.Close, () => {
       this.logger.info('Deepgram connection closed')
       onClose()
     })
 
-    connection.on('error', (error) => {
+    connection.on(LiveTranscriptionEvents.Error, (error: Error) => {
       this.logger.error('Deepgram connection error', { error: error.message })
       onError(error)
     })
 
-    connection.on('Results', (data) => {
+    connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
       try {
         const transcript = data.channel?.alternatives?.[0]?.transcript
         const isFinal = data.is_final
@@ -78,20 +81,24 @@ class DeepgramService {
             confidence
           })
           
-          onTranscript({
+          const result: DeepgramTranscriptResult = {
             text: transcript,
             isFinal,
             confidence,
             rawData: data
-          })
+          }
+          
+          onTranscript(result)
         }
       } catch (error) {
-        this.logger.error('Error processing transcript', { error: error.message })
-        onError(error)
+        this.logger.error('Error processing transcript', { 
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+        onError(error instanceof Error ? error : new Error('Unknown transcript processing error'))
       }
     })
 
-    connection.on('Metadata', (data) => {
+    connection.on(LiveTranscriptionEvents.Metadata, (data: any) => {
       this.logger.debug('Received metadata', { metadata: data })
       onMetadata(data)
     })
@@ -99,10 +106,8 @@ class DeepgramService {
 
   /**
    * Send audio data to Deepgram for transcription
-   * @param {Object} connection - Deepgram connection
-   * @param {Buffer} audioData - Audio data buffer
    */
-  sendAudio(connection, audioData) {
+  sendAudio(connection: ReturnType<typeof this.createLiveTranscription>, audioData: Buffer): void {
     try {
       if (connection.getReadyState() === 1) { // WebSocket.OPEN
         connection.send(audioData)
@@ -111,35 +116,31 @@ class DeepgramService {
       }
     } catch (error) {
       this.logger.error('Failed to send audio to Deepgram', {
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
 
   /**
    * Close Deepgram connection
-   * @param {Object} connection - Deepgram connection to close
    */
-  closeConnection(connection) {
+  closeConnection(connection: ReturnType<typeof this.createLiveTranscription>): void {
     try {
       if (connection && connection.getReadyState() !== 3) { // Not CLOSED
-        connection.requestClose()
+        connection.finish()
         this.logger.info('Deepgram connection close requested')
       }
     } catch (error) {
       this.logger.error('Error closing Deepgram connection', {
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   }
 
   /**
    * Transcribe pre-recorded audio file
-   * @param {Buffer|string} audio - Audio data or file path
-   * @param {Object} options - Transcription options
-   * @returns {Promise<Object>} Transcription result
    */
-  async transcribeFile(audio, options = {}) {
+  async transcribeFile(audio: Buffer | string, options: Record<string, any> = {}): Promise<any> {
     try {
       const response = await this.client.listen.prerecorded.transcribeFile(
         audio,
@@ -150,17 +151,22 @@ class DeepgramService {
       )
 
       this.logger.info('File transcription completed', {
-        duration: response.results?.metadata?.duration
+        duration: response.result?.metadata?.duration
       })
 
-      return response.results
+      return response.result
     } catch (error) {
       this.logger.error('File transcription failed', {
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
   }
-}
 
-module.exports = DeepgramService
+  /**
+   * Get connection status
+   */
+  getConnectionStatus(connection: ReturnType<typeof this.createLiveTranscription>): number {
+    return connection.getReadyState()
+  }
+}

@@ -1,8 +1,11 @@
-require('dotenv').config()
+import dotenv from 'dotenv'
+import { AppConfig } from '../types'
 
-const config = {
+dotenv.config()
+
+const config: AppConfig = {
   server: {
-    port: parseInt(process.env.PORT, 10) || 3000,
+    port: parseInt(process.env.PORT || '3000', 10),
     host: process.env.HOST || '0.0.0.0',
     environment: process.env.NODE_ENV || 'development'
   },
@@ -13,14 +16,14 @@ const config = {
   },
   
   twilio: {
-    accountSid: process.env.TWILIO_ACCOUNT_SID,
-    authToken: process.env.TWILIO_AUTH_TOKEN,
-    phoneNumber: process.env.TWILIO_PHONE_NUMBER,
-    webhookUrl: process.env.TWILIO_WEBHOOK_URL
+    accountSid: process.env.TWILIO_ACCOUNT_SID || '',
+    authToken: process.env.TWILIO_AUTH_TOKEN || '',
+    phoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
+    webhookUrl: process.env.TWILIO_WEBHOOK_URL || ''
   },
   
   deepgram: {
-    apiKey: process.env.DEEPGRAM_API_KEY,
+    apiKey: process.env.DEEPGRAM_API_KEY || '',
     config: {
       model: 'nova-2',
       language: 'en-US',
@@ -32,8 +35,8 @@ const config = {
   },
   
   elevenlabs: {
-    apiKey: process.env.ELEVENLABS_API_KEY,
-    voiceId: process.env.ELEVENLABS_VOICE_ID,
+    apiKey: process.env.ELEVENLABS_API_KEY || '',
+    voiceId: process.env.ELEVENLABS_VOICE_ID || '',
     config: {
       model_id: 'eleven_turbo_v2',
       voice_settings: {
@@ -44,7 +47,7 @@ const config = {
   },
   
   openai: {
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: process.env.OPENAI_API_KEY || '',
     model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
     maxTokens: 150,
     temperature: 0.7
@@ -55,13 +58,13 @@ const config = {
   },
   
   rateLimit: {
-    max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
-    timeWindow: parseInt(process.env.RATE_LIMIT_WINDOW, 10) || 60000
+    max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+    timeWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '60000', 10)
   }
 }
 
 // Validate required environment variables
-const requiredEnvVars = [
+const requiredEnvVars: Array<keyof typeof process.env> = [
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
   'DEEPGRAM_API_KEY',
@@ -75,4 +78,4 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`)
 }
 
-module.exports = config
+export default config

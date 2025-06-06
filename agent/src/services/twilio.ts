@@ -1,8 +1,12 @@
-const twilio = require('twilio')
-const config = require('../config')
-const logger = require('../utils/logger')
+import twilio from 'twilio'
+import config from '../config'
+import logger from '../utils/logger'
+import { TwilioWebhookParams } from '../types'
 
-class TwilioService {
+export class TwilioService {
+  private client: twilio.Twilio
+  private logger: typeof logger
+
   constructor() {
     this.client = twilio(config.twilio.accountSid, config.twilio.authToken)
     this.logger = logger.child({ service: 'twilio' })
@@ -10,10 +14,8 @@ class TwilioService {
 
   /**
    * Generate TwiML for incoming calls
-   * @param {string} streamUrl - WebSocket URL for media streaming
-   * @returns {string} TwiML response
    */
-  generateConnectTwiML(streamUrl) {
+  generateConnectTwiML(streamUrl: string): string {
     const response = new twilio.twiml.VoiceResponse()
     
     // Add a brief greeting
@@ -39,10 +41,8 @@ class TwilioService {
 
   /**
    * Generate TwiML to play audio response
-   * @param {string} audioUrl - URL to the audio file
-   * @returns {string} TwiML response
    */
-  generatePlayAudioTwiML(audioUrl) {
+  generatePlayAudioTwiML(audioUrl: string): string {
     const response = new twilio.twiml.VoiceResponse()
     response.play(audioUrl)
     response.pause({ length: 1 })
@@ -53,11 +53,8 @@ class TwilioService {
 
   /**
    * Make an outbound call
-   * @param {string} to - Phone number to call
-   * @param {string} webhookUrl - URL for call handling
-   * @returns {Promise<Object>} Call object
    */
-  async makeCall(to, webhookUrl) {
+  async makeCall(to: string, webhookUrl: string): Promise<twilio.CallInstance> {
     try {
       const call = await this.client.calls.create({
         to,
@@ -77,7 +74,7 @@ class TwilioService {
       this.logger.error('Failed to make outbound call', { 
         to, 
         webhookUrl, 
-        error: error.message 
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
@@ -85,12 +82,8 @@ class TwilioService {
 
   /**
    * Validate Twilio webhook signature
-   * @param {string} signature - X-Twilio-Signature header
-   * @param {string} url - Full URL of the webhook
-   * @param {Object} params - POST parameters
-   * @returns {boolean} Is signature valid
    */
-  validateSignature(signature, url, params) {
+  validateSignature(signature: string, url: string, params: TwilioWebhookParams): boolean {
     try {
       return twilio.validateRequest(
         config.twilio.authToken,
@@ -99,17 +92,17 @@ class TwilioService {
         params
       )
     } catch (error) {
-      this.logger.error('Signature validation failed', { error: error.message })
+      this.logger.error('Signature validation failed', { 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
       return false
     }
   }
 
   /**
    * End a call
-   * @param {string} callSid - Call SID to end
-   * @returns {Promise<Object>} Updated call object
    */
-  async endCall(callSid) {
+  async endCall(callSid: string): Promise<twilio.CallInstance> {
     try {
       const call = await this.client.calls(callSid).update({
         status: 'completed'
@@ -120,11 +113,26 @@ class TwilioService {
     } catch (error) {
       this.logger.error('Failed to end call', { 
         callSid, 
-        error: error.message 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      throw error
+    }
+  }
+
+  /**
+   * Get call details
+   */
+  async getCall(callSid: string): Promise<twilio.CallInstance> {
+    try {
+      const call = await this.client.calls(callSid).fetch()
+      this.logger.info('Retrieved call details', { callSid, status: call.status })
+      return call
+    } catch (error) {
+      this.logger.error('Failed to get call details', {
+        callSid,
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
   }
 }
-
-module.exports = TwilioService

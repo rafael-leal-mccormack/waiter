@@ -1,5 +1,5 @@
-const pino = require('pino')
-const config = require('../config')
+import pino from 'pino'
+import config from '../config'
 
 const logger = pino({
   level: config.logging.level,
@@ -13,4 +13,4 @@ const logger = pino({
   } : undefined
 })
 
-module.exports = logger
+export default logger

@@ -1,8 +1,12 @@
-const { ElevenLabsApi, ElevenLabsApiResponseError } = require('elevenlabs')
-const config = require('../config')
-const logger = require('../utils/logger')
+import { ElevenLabsApi } from 'elevenlabs'
+import config from '../config'
+import logger from '../utils/logger'
+import { ElevenLabsTTSOptions, TextValidationResult, Voice } from '../types'
 
-class ElevenLabsService {
+export class ElevenLabsService {
+  private client: ElevenLabsApi
+  private logger: typeof logger
+
   constructor() {
     this.client = new ElevenLabsApi({
       apiKey: config.elevenlabs.apiKey
@@ -12,11 +16,8 @@ class ElevenLabsService {
 
   /**
    * Convert text to speech
-   * @param {string} text - Text to convert to speech
-   * @param {Object} options - Additional options for TTS
-   * @returns {Promise<Buffer>} Audio buffer
    */
-  async textToSpeech(text, options = {}) {
+  async textToSpeech(text: string, options: ElevenLabsTTSOptions = {}): Promise<Buffer> {
     try {
       const voiceId = options.voiceId || config.elevenlabs.voiceId
       const modelId = options.modelId || config.elevenlabs.config.model_id
@@ -38,7 +39,7 @@ class ElevenLabsService {
       })
 
       // Convert stream to buffer
-      const chunks = []
+      const chunks: Buffer[] = []
       for await (const chunk of audioStream) {
         chunks.push(chunk)
       }
@@ -54,15 +55,8 @@ class ElevenLabsService {
     } catch (error) {
       this.logger.error('Text to speech conversion failed', {
         text: text.substring(0, 100),
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
-      
-      if (error instanceof ElevenLabsApiResponseError) {
-        this.logger.error('ElevenLabs API error details', {
-          status: error.status,
-          body: error.body
-        })
-      }
       
       throw error
     }
@@ -70,11 +64,8 @@ class ElevenLabsService {
 
   /**
    * Stream text to speech (for real-time applications)
-   * @param {string} text - Text to convert
-   * @param {Object} options - TTS options
-   * @returns {Promise<ReadableStream>} Audio stream
    */
-  async streamTextToSpeech(text, options = {}) {
+  async streamTextToSpeech(text: string, options: ElevenLabsTTSOptions = {}): Promise<ReadableStream> {
     try {
       const voiceId = options.voiceId || config.elevenlabs.voiceId
       const modelId = options.modelId || config.elevenlabs.config.model_id
@@ -99,7 +90,7 @@ class ElevenLabsService {
     } catch (error) {
       this.logger.error('Text to speech streaming failed', {
         text: text.substring(0, 100),
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
@@ -107,9 +98,8 @@ class ElevenLabsService {
 
   /**
    * Get available voices
-   * @returns {Promise<Array>} List of available voices
    */
-  async getVoices() {
+  async getVoices(): Promise<Voice[]> {
     try {
       const response = await this.client.voices.getAll()
       this.logger.info('Retrieved available voices', {
@@ -117,17 +107,17 @@ class ElevenLabsService {
       })
       return response.voices || []
     } catch (error) {
-      this.logger.error('Failed to get voices', { error: error.message })
+      this.logger.error('Failed to get voices', { 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
       throw error
     }
   }
 
   /**
    * Get voice details
-   * @param {string} voiceId - Voice ID to get details for
-   * @returns {Promise<Object>} Voice details
    */
-  async getVoice(voiceId) {
+  async getVoice(voiceId: string): Promise<Voice> {
     try {
       const voice = await this.client.voices.get(voiceId)
       this.logger.info('Retrieved voice details', { voiceId })
@@ -135,7 +125,7 @@ class ElevenLabsService {
     } catch (error) {
       this.logger.error('Failed to get voice details', {
         voiceId,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
     }
@@ -143,27 +133,26 @@ class ElevenLabsService {
 
   /**
    * Get user info (for quota and usage tracking)
-   * @returns {Promise<Object>} User information
    */
-  async getUserInfo() {
+  async getUserInfo(): Promise<any> {
     try {
       const userInfo = await this.client.user.get()
       this.logger.info('Retrieved user info')
       return userInfo
     } catch (error) {
-      this.logger.error('Failed to get user info', { error: error.message })
+      this.logger.error('Failed to get user info', { 
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
       throw error
     }
   }
 
   /**
    * Validate text for TTS (check length, content, etc.)
-   * @param {string} text - Text to validate
-   * @returns {Object} Validation result
    */
-  validateText(text) {
+  validateText(text: string): TextValidationResult {
     const maxLength = 5000 // ElevenLabs typical limit
-    const result = {
+    const result: TextValidationResult = {
       isValid: true,
       errors: []
     }
@@ -185,6 +174,34 @@ class ElevenLabsService {
 
     return result
   }
-}
 
-module.exports = ElevenLabsService
+  /**
+   * Check if voice ID is valid
+   */
+  async isValidVoice(voiceId: string): Promise<boolean> {
+    try {
+      await this.getVoice(voiceId)
+      return true
+    } catch (error) {
+      return false
+    }
+  }
+
+  /**
+   * Get random voice from available voices
+   */
+  async getRandomVoice(): Promise<Voice | null> {
+    try {
+      const voices = await this.getVoices()
+      if (voices.length === 0) return null
+      
+      const randomIndex = Math.floor(Math.random() * voices.length)
+      return voices[randomIndex] || null
+    } catch (error) {
+      this.logger.error('Failed to get random voice', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return null
+    }
+  }
+}

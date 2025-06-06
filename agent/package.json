@@ -2,14 +2,17 @@
   "name": "ai-phone-call-poc",
   "version": "1.0.0",
   "description": "POC for AI-powered phone calls using Twilio, Deepgram, and ElevenLabs",
-  "main": "src/server.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint:fix": "eslint src/ --fix",
+    "clean": "rimraf dist",
+    "prebuild": "npm run clean"
   },
   "dependencies": {
     "fastify": "^4.24.3",
@@ -29,13 +32,24 @@
     "joi": "^17.11.0"
   },
   "devDependencies": {
+    "typescript": "^5.3.2",
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
+    "@types/node": "^20.9.0",
+    "@types/uuid": "^9.0.7",
+    "@types/ws": "^8.5.8",
+    "@types/jest": "^29.5.8",
     "nodemon": "^3.0.2",
     "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
     "eslint": "^8.54.0",
+    "@typescript-eslint/eslint-plugin": "^6.12.0",
+    "@typescript-eslint/parser": "^6.12.0",
     "eslint-config-standard": "^17.1.0",
     "eslint-plugin-import": "^2.29.0",
     "eslint-plugin-node": "^11.1.0",
-    "eslint-plugin-promise": "^6.1.1"
+    "eslint-plugin-promise": "^6.1.1",
+    "rimraf": "^5.0.5"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -48,7 +62,8 @@
     "ai",
     "phone-call",
     "voice",
-    "poc"
+    "poc",
+    "typescript"
   ],
   "author": "",
   "license": "MIT"
