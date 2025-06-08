@@ -110,7 +110,7 @@ export class DeepgramService {
   sendAudio(connection: ReturnType<typeof this.createLiveTranscription>, audioData: Buffer): void {
     try {
       if (connection.getReadyState() === 1) { // WebSocket.OPEN
-        connection.send(audioData)
+        connection.send(audioData as any)
       } else {
         this.logger.warn('Attempted to send audio to closed Deepgram connection')
       }
@@ -140,7 +140,7 @@ export class DeepgramService {
   /**
    * Transcribe pre-recorded audio file
    */
-  async transcribeFile(audio: Buffer | string, options: Record<string, any> = {}): Promise<any> {
+  async transcribeFile(audio: any, options: Record<string, any> = {}): Promise<any> {
     try {
       const response = await this.client.listen.prerecorded.transcribeFile(
         audio,

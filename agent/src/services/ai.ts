@@ -86,10 +86,22 @@ export class AIService {
 
       return aiResponse.trim()
     } catch (error) {
+      // Log detailed error information
+      console.error('🚨 DETAILED OPENAI ERROR:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        type: error?.constructor?.name,
+        stack: error instanceof Error ? error.stack?.substring(0, 500) : 'No stack',
+        openaiDetails: (error as any)?.error || (error as any)?.response?.data || 'No OpenAI details'
+      })
+      
       this.logger.error('Failed to generate AI response', {
         callId,
         userMessage: userMessage.substring(0, 100),
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        errorType: error?.constructor?.name,
+        errorStack: error instanceof Error ? error.stack : 'No stack trace',
+        // Log OpenAI specific error details if available
+        openaiError: (error as any)?.error || (error as any)?.response?.data || null
       })
       throw error
     }

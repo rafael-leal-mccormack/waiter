@@ -1,16 +1,15 @@
-import { ElevenLabsApi } from 'elevenlabs'
+import { ElevenLabsClient } from 'elevenlabs'
 import config from '../config'
 import logger from '../utils/logger'
-import { ElevenLabsTTSOptions, TextValidationResult, Voice } from '../types'
+import { ElevenLabsTTSOptions, TextValidationResult } from '../types'
+import { Readable } from 'stream'
 
 export class ElevenLabsService {
-  private client: ElevenLabsApi
+  private api: ElevenLabsClient
   private logger: typeof logger
 
   constructor() {
-    this.client = new ElevenLabsApi({
-      apiKey: config.elevenlabs.apiKey
-    })
+    this.api = new ElevenLabsClient({ apiKey: config.elevenlabs.apiKey })
     this.logger = logger.child({ service: 'elevenlabs' })
   }
 
@@ -32,10 +31,11 @@ export class ElevenLabsService {
         modelId
       })
 
-      const audioStream = await this.client.textToSpeech.convert(voiceId, {
+      const audioStream = await this.api.textToSpeech.convert(voiceId, {
         model_id: modelId,
         text,
-        voice_settings: voiceSettings
+        voice_settings: voiceSettings,
+        output_format: 'ulaw_8000' // Twilio-compatible format: mulaw at 8kHz
       })
 
       // Convert stream to buffer
@@ -65,7 +65,7 @@ export class ElevenLabsService {
   /**
    * Stream text to speech (for real-time applications)
    */
-  async streamTextToSpeech(text: string, options: ElevenLabsTTSOptions = {}): Promise<ReadableStream> {
+  async streamTextToSpeech(text: string, options: ElevenLabsTTSOptions = {}): Promise<Readable> {
     try {
       const voiceId = options.voiceId || config.elevenlabs.voiceId
       const modelId = options.modelId || config.elevenlabs.config.model_id
@@ -80,13 +80,14 @@ export class ElevenLabsService {
         modelId
       })
 
-      const audioStream = await this.client.textToSpeech.convertAsStream(voiceId, {
+      const audioStream = await this.api.textToSpeech.convertAsStream(voiceId, {
         model_id: modelId,
         text,
-        voice_settings: voiceSettings
+        voice_settings: voiceSettings,
+        output_format: 'ulaw_8000' // Twilio-compatible format: mulaw at 8kHz
       })
 
-      return audioStream
+      return audioStream as Readable
     } catch (error) {
       this.logger.error('Text to speech streaming failed', {
         text: text.substring(0, 100),
@@ -99,9 +100,9 @@ export class ElevenLabsService {
   /**
    * Get available voices
    */
-  async getVoices(): Promise<Voice[]> {
+  async getVoices(): Promise<any[]> {
     try {
-      const response = await this.client.voices.getAll()
+      const response = await this.api.voices.getAll()
       this.logger.info('Retrieved available voices', {
         count: response.voices?.length || 0
       })
@@ -117,9 +118,9 @@ export class ElevenLabsService {
   /**
    * Get voice details
    */
-  async getVoice(voiceId: string): Promise<Voice> {
+  async getVoice(voiceId: string): Promise<any> {
     try {
-      const voice = await this.client.voices.get(voiceId)
+      const voice = await this.api.voices.get(voiceId)
       this.logger.info('Retrieved voice details', { voiceId })
       return voice
     } catch (error) {
@@ -136,7 +137,7 @@ export class ElevenLabsService {
    */
   async getUserInfo(): Promise<any> {
     try {
-      const userInfo = await this.client.user.get()
+      const userInfo = await this.api.user.get()
       this.logger.info('Retrieved user info')
       return userInfo
     } catch (error) {
@@ -190,7 +191,7 @@ export class ElevenLabsService {
   /**
    * Get random voice from available voices
    */
-  async getRandomVoice(): Promise<Voice | null> {
+  async getRandomVoice(): Promise<any | null> {
     try {
       const voices = await this.getVoices()
       if (voices.length === 0) return null

@@ -36,6 +36,9 @@ export interface DeepgramConfig {
     interim_results: boolean
     endpointing: number
     vad_events: boolean
+    encoding?: string
+    sample_rate?: number
+    channels?: number
   }
 }
 

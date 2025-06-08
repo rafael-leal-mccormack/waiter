@@ -30,7 +30,11 @@ const config: AppConfig = {
       smart_format: true,
       interim_results: true,
       endpointing: 300,
-      vad_events: true
+      vad_events: true,
+      // Twilio-specific audio format configuration
+      encoding: 'mulaw',
+      sample_rate: 8000,
+      channels: 1
     }
   },
   

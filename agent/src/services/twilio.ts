@@ -13,30 +13,25 @@ export class TwilioService {
   }
 
   /**
-   * Generate TwiML for incoming calls
+   * Generate TwiML for incoming calls with bidirectional media streaming
    */
-  generateConnectTwiML(streamUrl: string): string {
+  generateStartTwiML(streamUrl: string): string {
     const response = new twilio.twiml.VoiceResponse()
-    
-    // Add a brief greeting
-    response.say({
-      voice: 'alice',
-      language: 'en-US'
-    }, 'Hello! Please wait while I connect you to our AI assistant.')
 
-    // Start media stream
-    const start = response.start()
-    start.stream({
-      name: 'ai-call-stream',
-      url: streamUrl,
-      track: 'both_tracks'
+    // Use <Connect> and <Stream> for bidirectional media streaming
+    // This allows both receiving AND sending audio through WebSocket
+    const connect = response.connect()
+    connect.stream({
+      url: streamUrl
+      // No track parameter needed for bidirectional - defaults to inbound
     })
 
-    // Pause to keep the call active
-    response.pause({ length: 60 })
-
-    this.logger.info('Generated TwiML for media streaming', { streamUrl })
-    return response.toString()
+    const twimlString = response.toString()
+    this.logger.info('Generated TwiML for bidirectional media streaming', {
+      streamUrl,
+      twiml: twimlString,
+    })
+    return twimlString
   }
 
   /**
@@ -54,7 +49,7 @@ export class TwilioService {
   /**
    * Make an outbound call
    */
-  async makeCall(to: string, webhookUrl: string): Promise<twilio.CallInstance> {
+  async makeCall(to: string, webhookUrl: string): Promise<any> {
     try {
       const call = await this.client.calls.create({
         to,
@@ -102,7 +97,7 @@ export class TwilioService {
   /**
    * End a call
    */
-  async endCall(callSid: string): Promise<twilio.CallInstance> {
+  async endCall(callSid: string): Promise<any> {
     try {
       const call = await this.client.calls(callSid).update({
         status: 'completed'
@@ -122,14 +117,15 @@ export class TwilioService {
   /**
    * Get call details
    */
-  async getCall(callSid: string): Promise<twilio.CallInstance> {
+  async getCall(callSid: string): Promise<any> {
     try {
       const call = await this.client.calls(callSid).fetch()
-      this.logger.info('Retrieved call details', { callSid, status: call.status })
+      
+      this.logger.info('Retrieved call details', { callSid })
       return call
     } catch (error) {
-      this.logger.error('Failed to get call details', {
-        callSid,
+      this.logger.error('Failed to get call details', { 
+        callSid, 
         error: error instanceof Error ? error.message : 'Unknown error'
       })
       throw error
