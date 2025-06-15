@@ -112,12 +112,12 @@ sudo snap install ngrok
 # In terminal 1 - Start the development server
 npm run dev
 ```
-Your server will start on `http://localhost:3000`
+Your server will start on `http://localhost:3001`
 
 #### Step 2: Start ngrok Tunnel
 ```bash
 # In terminal 2 - Create tunnel to your local server
-ngrok http 3000
+ngrok http 3001
 ```
 
 You'll see output like:
@@ -130,7 +130,7 @@ Version                       3.x.x
 Region                        United States (us)
 Latency                       -
 Web Interface                 http://127.0.0.1:4040
-Forwarding                    https://abc123.ngrok.io -> http://localhost:3000
+Forwarding                    https://abc123.ngrok.io -> http://localhost:3001
 
 Connections                   ttl     opn     rt1     rt5     p50     p90
                               0       0       0.00    0.00    0.00    0.00
@@ -155,7 +155,7 @@ In your Twilio Console:
 
 #### 1. Custom Subdomain (Paid Feature)
 ```bash
-ngrok http 3000 --subdomain=my-ai-phone-app
+ngrok http 3001 --subdomain=my-ai-phone-app
 # Creates: https://my-ai-phone-app.ngrok.io
 ```
 
@@ -166,7 +166,7 @@ version: "2"
 authtoken: YOUR_AUTH_TOKEN
 tunnels:
   ai-phone:
-    addr: 3000
+    addr: 3001
     proto: http
     subdomain: my-ai-phone-app
 ```
@@ -182,7 +182,7 @@ Visit `http://localhost:4040` to see all HTTP requests/responses in real-time.
 #### 4. Multiple Tunnels
 ```bash
 # Tunnel multiple ports
-ngrok http 3000 3001 3002
+ngrok http 3001 3002 3003
 ```
 
 ### ngrok Troubleshooting
@@ -209,7 +209,7 @@ ngrok http 3000 3001 3002
    # Kill existing tunnels
    pkill ngrok
    # Or use a different port
-   ngrok http 3001
+   ngrok http 3002
    ```
 
 4. **Webhook not receiving requests**
@@ -272,7 +272,7 @@ Create a `.env` file based on `.env.example`:
 
 ```env
 # Server Configuration
-PORT=3000
+PORT=3001
 NODE_ENV=development
 HOST=0.0.0.0
 
@@ -314,7 +314,7 @@ npm start
 npm run dev
 
 # Terminal 2: Start ngrok tunnel
-ngrok http 3000
+ngrok http 3001
 
 # Update your .env file with the ngrok URL
 # Configure Twilio webhook with the ngrok URL
@@ -519,7 +519,7 @@ npm run clean
 
 5. **ngrok Issues**
    - **Tunnel not starting**: Check auth token configuration
-   - **Connection refused**: Ensure your server is running on port 3000
+   - **Connection refused**: Ensure your server is running on port 3001
    - **Webhook timeouts**: Check if your server is responding quickly enough
    - **URL changes**: ngrok free tier creates new URLs on restart
 

@@ -10,28 +10,46 @@ export interface ToolDefinition {
   name: string
   description: string
   parameters: {
-    type: 'object'
-    properties: Record<string, {
-      type: string
-      description: string
-      required?: boolean
-    }>
+    type: string
+    properties: Record<string, any>
     required: string[]
   }
+}
+
+interface RestaurantSearchResponse {
+  context: string;
+  error?: string;
 }
 
 export class ToolService {
   private twilioService: TwilioService
   private logger: typeof logger
+  private restaurantServiceUrl: string
 
   constructor(twilioService: TwilioService) {
     this.twilioService = twilioService
     this.logger = logger.child({ service: 'tools' })
+    this.restaurantServiceUrl = process.env.RESTAURANTS_SERVICE_URL || 'http://localhost:3000'
   }
 
   // Define available tools
   getAvailableTools(): ToolDefinition[] {
     return [
+      {
+        name: 'search_restaurant',
+        description: 'Search for restaurant information and context based on user query',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'The user\'s question or search query about the restaurant',
+              required: true
+            },
+          },
+          required: ['query']
+        }
+      },
       {
         name: 'hang_up_call',
         description: 'End the current phone call',
@@ -71,11 +89,14 @@ export class ToolService {
   }
 
   // Execute a tool call
-  async executeToolCall(callSid: string, toolCall: ToolCall): Promise<{ success: boolean; message: string }> {
+  async executeToolCall(callSid: string, toolCall: ToolCall): Promise<{ success: boolean; message: string; data?: any }> {
     this.logger.info('Executing tool call', { callSid, tool: toolCall.name, args: toolCall.args })
 
     try {
       switch (toolCall.name) {
+        case 'search_restaurant':
+          return await this.searchRestaurant(toolCall.args.query)
+        
         case 'hang_up_call':
           return await this.hangUpCall(callSid, toolCall.args.reason)
         
@@ -97,6 +118,50 @@ export class ToolService {
       return { 
         success: false, 
         message: `Tool execution failed: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }
+    }
+  }
+
+  // Search restaurant information
+  private async searchRestaurant(query: string): Promise<{ success: boolean; message: string; data?: any }> {
+    try {
+      const response = await fetch(`${this.restaurantServiceUrl}/api/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: query,
+          restaurantId: "9552d239-5006-4f49-bfbf-e5ea8b7e33c5"
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Search failed with status ${response.status}`)
+      }
+
+      const data = await response.json() as RestaurantSearchResponse
+      
+      this.logger.info('Restaurant search completed', { 
+        query,
+        restaurantId: "9552d239-5006-4f49-bfbf-e5ea8b7e33c5",
+        hasContext: !!data.context
+      })
+
+      return {
+        success: true,
+        message: 'Restaurant information retrieved successfully',
+        data: data.context
+      }
+    } catch (error) {
+      console.error('Restaurant search failed', {
+        query,
+        restaurantId: "9552d239-5006-4f49-bfbf-e5ea8b7e33c5",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return {
+        success: false,
+        message: `Failed to search restaurant information: ${error instanceof Error ? error.message : 'Unknown error'}`
       }
     }
   }

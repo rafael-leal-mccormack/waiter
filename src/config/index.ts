@@ -5,7 +5,7 @@ dotenv.config()
 
 const config: AppConfig = {
   server: {
-    port: parseInt(process.env.PORT || '3000', 10),
+    port: parseInt(process.env.PORT || '3001', 10),
     host: process.env.HOST || '0.0.0.0',
     environment: process.env.NODE_ENV || 'development'
   },

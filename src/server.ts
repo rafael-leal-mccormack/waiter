@@ -1,5 +1,6 @@
 import fastify from 'fastify'
 import formbody from '@fastify/formbody'
+import cors from '@fastify/cors'
 import http from 'http'
 import { server as WebSocketServer, request as WebSocketRequest, connection as WebSocketConnection } from 'websocket'
 import config from './config'
@@ -38,13 +39,35 @@ const app = fastify({
         colorize: true
       }
     }
-  }
+  },
+  // Add JSON body parser configuration
+  bodyLimit: 30 * 1024 * 1024, // 30MB
+  trustProxy: true
+})
+
+// Register CORS with proper configuration
+app.register(cors, {
+  // put your options here
+  origin: true,
+  methods: ['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 })
 
 async function registerPlugins() {
   try {
     // Register form body parser
     await app.register(formbody)
+    
+    // Register JSON parser explicitly
+    app.addContentTypeParser('application/json', { parseAs: 'string' }, function (req, body, done) {
+      try {
+        const json = JSON.parse(body as string)
+        done(null, json)
+      } catch (err) {
+        done(err as Error, undefined)
+      }
+    })
     
     logger.info('Plugins registered successfully')
   } catch (error) {
@@ -98,10 +121,32 @@ app.post('/webhook/call', async (request, reply) => {
 // Make outbound call endpoint
 app.post('/api/call', async (request, reply) => {
   try {
+    logger.info('Received call request', {
+      body: request.body,
+      headers: request.headers,
+      contentType: request.headers['content-type'],
+      method: request.method,
+      url: request.url,
+      bodyType: typeof request.body,
+      bodyKeys: request.body ? Object.keys(request.body) : []
+    });
+
     const body = request.body as any;
-    const phoneNumber = body?.phoneNumber;
+    // Accept both phone_number and phoneNumber
+    const phoneNumber = body?.phoneNumber || body?.phone_number;
+
+    logger.info('Parsed phone number', { 
+      phoneNumber,
+      bodyKeys: Object.keys(body || {}),
+      rawBody: JSON.stringify(body)
+    });
 
     if (!phoneNumber) {
+      logger.warn('Phone number missing from request', { 
+        body,
+        contentType: request.headers['content-type'],
+        bodyType: typeof request.body
+      });
       reply.code(400)
       return { error: 'Phone number is required' }
     }
@@ -109,14 +154,38 @@ app.post('/api/call', async (request, reply) => {
     const webhookUrl = `https://${request.headers.host}/webhook/call`
     const call = await twilioService.makeCall(phoneNumber, webhookUrl)
 
-    return {
-      success: true,
+    // Get detailed call status
+    const callDetails = await twilioService.getCall(call.sid)
+    logger.info('Call details after initiation', {
       callSid: call.sid,
-      status: call.status
+      status: call.status,
+      direction: callDetails.direction,
+      answeredBy: callDetails.answeredBy,
+      duration: callDetails.duration,
+      errorCode: callDetails.errorCode,
+      errorMessage: callDetails.errorMessage,
+      from: callDetails.from,
+      to: callDetails.to,
+      parentCallSid: callDetails.parentCallSid,
+      queueTime: callDetails.queueTime,
+      startTime: callDetails.startTime,
+      endTime: callDetails.endTime
+    })
+
+    return {
+      callSid: call.sid,
+      status: call.status,
+      details: {
+        direction: callDetails.direction,
+        answeredBy: callDetails.answeredBy,
+        errorCode: callDetails.errorCode,
+        errorMessage: callDetails.errorMessage
+      }
     }
   } catch (error) {
     logger.error('Error making outbound call', {
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      body: request.body
     })
     reply.code(500)
     return { error: 'Failed to make call' }
@@ -217,7 +286,7 @@ async function start() {
                   callSid: data.start?.callSid,
                   streamSid: data.start?.streamSid 
                 })
-                await handleCallStart(data as TwilioStartMessage)
+                  await handleCallStart(data as TwilioStartMessage)
                 break
 
               case 'media':
@@ -236,14 +305,18 @@ async function start() {
                 break
               
               case 'mark':
-                console.log('🎯 Mark message received from Twilio:', {
+                logger.info('🎯 Mark message received from Twilio:', {
                   markName: data.mark?.name,
-                  message: 'Audio playback completed or buffer cleared'
+                  message: data.mark?.message
                 })
                 break
 
               default:
-                logger.info('❓ Unknown event', { connectionId, event: data.event, data })
+                logger.info('❓ Unknown event', { 
+                  connectionId, 
+                  event: data.event, 
+                  data: JSON.stringify(data) 
+                })
             }
           } catch (error) {
             logger.error('❌ Error processing WebSocket message', {
@@ -301,7 +374,7 @@ async function start() {
         // Initialize Deepgram connection
         try {
           deepgramConnection = deepgramService.createLiveTranscription()
-          
+
           deepgramService.setupEventHandlers(deepgramConnection, {
             onOpen: () => {
               logger.info('🎤 Deepgram connection opened', { callSid })
@@ -356,23 +429,24 @@ async function start() {
             callSid, 
             error: error instanceof Error ? error.message : 'Unknown error'
           })
-        }
+              }
 
         // Send initial greeting after a brief delay to ensure connection is stable
         setTimeout(async () => {
           try {
-            const greeting = "Hello! Welcome to our automated restaurant booking service. How can I help you today?"
+          const greeting = "Hello! Welcome to our automated restaurant booking service. How can I help you today?"
             console.log('📢 Sending initial greeting:', greeting)
-            
-            const greetingAudio = await elevenlabsService.textToSpeech(greeting)
-            await sendAudioToTwilio(greetingAudio)
-            
-            logger.info('📢 Initial greeting sent', { callSid })
-          } catch (error) {
+          
+          const greetingAudio = await elevenlabsService.textToSpeech(greeting)
+          await sendAudioToTwilio(greetingAudio)
+          
+          logger.info('📢 Initial greeting sent', { callSid })
+
+        } catch (error) {
             logger.error('❌ Failed to send initial greeting', {
-              callSid,
-              error: error instanceof Error ? error.message : 'Unknown error'
-            })
+            callSid, 
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
           }
         }, 1000) // 1 second delay to ensure WebSocket is ready
       }
@@ -413,12 +487,12 @@ async function start() {
           // Get available tools
           const availableTools = toolService.getAvailableTools()
 
-          // Generate AI response with tools
+          // Generate initial AI response with tools
           const aiResponse = await aiService.generateResponseWithTools(
             userMessage, 
             callSession.callSid,
             {
-              maxTokens: 100, // Keep responses short for phone calls
+              maxTokens: 100,
               temperature: 0.7,
               tools: availableTools
             }
@@ -438,16 +512,16 @@ async function start() {
           callSession.aiResponses.push({
             text: aiResponse.text,
             timestamp: new Date(),
-            processingTime: 0 // TODO: Calculate actual processing time
+            processingTime: 0
           })
 
-          // Convert to speech and send response
+          // Convert to speech and send initial response
           console.log('📝 Converting to speech:', aiResponse.text)
-          const audioBuffer = await elevenlabsService.textToSpeech(aiResponse.text)
+          const initialAudioBuffer = await elevenlabsService.textToSpeech(aiResponse.text)
           
           logger.info('🔊 Audio generated', { 
             callSid: callSession.callSid,
-            audioSize: audioBuffer.length 
+            audioSize: initialAudioBuffer.length 
           })
 
           // If we have tool calls, we need to wait for the audio to finish playing
@@ -489,7 +563,7 @@ async function start() {
               }, 10000) // 10 second timeout
               
               // Send audio with mark
-              sendAudioToTwilio(audioBuffer, markName).catch(error => {
+              sendAudioToTwilio(initialAudioBuffer, markName).catch(error => {
                 logger.error('Failed to send audio', { error })
                 clearTimeout(timeout)
                 if (markHandler) {
@@ -503,7 +577,9 @@ async function start() {
             await audioPlaybackComplete
             logger.info('Proceeding with tool calls after audio playback')
 
-            // Now execute tool calls
+            // Now execute tool calls and collect results
+            let toolResults: { tool: string; success: boolean; message: string; data?: any }[] = []
+            
             for (const toolCall of aiResponse.toolCalls) {
               logger.info('Executing tool call', { 
                 tool: toolCall.name,
@@ -511,6 +587,8 @@ async function start() {
               })
               
               const result = await toolService.executeToolCall(callSession.callSid, toolCall)
+              toolResults.push({ tool: toolCall.name, ...result })
+              
               logger.info('Tool execution result', { 
                 callSid: callSession.callSid,
                 tool: toolCall.name,
@@ -524,9 +602,98 @@ async function start() {
                 return
               }
             }
+
+            // Generate follow-up response using tool results
+            if (toolResults.length > 0) {
+              const followUpPrompt = `You are a helpful restaurant assistant. The user asked: "${userMessage}"
+
+Here is our restaurant's menu information:
+
+${toolResults.map(r => {
+  if (r.tool === 'search_restaurant' && r.success && r.data) {
+    // Split the menu into sections based on the "--" separator
+    const menuSections: string[] = r.data.split('--').map((section: string) => section.trim())
+    
+    return `Menu Information:
+${menuSections.map((section: string) => {
+  // Get the first line as the section title
+  const lines: string[] = section.split('\n')
+  const title: string = lines[0]?.trim() || 'Other Items'  // Fallback if first line is undefined
+  const items: string[] = lines.slice(1)
+    .filter((line: string) => line.trim())
+    .map((line: string) => line.trim())
+  
+  return `${title}:
+${items.map((item: string) => `- ${item}`).join('\n')}`
+}).join('\n\n')}
+
+IMPORTANT DIETARY GUIDELINES:
+1. A dish is NOT vegetarian just because it contains vegetables
+2. A dish is vegetarian ONLY if it contains NO meat, poultry, or seafood
+3. If a dish contains any of these ingredients, it is NOT vegetarian:
+   - Chicken (including "chicken breast", "chicken pieces", etc.)
+   - Beef (including "steak", "ribs", etc.)
+   - Pork (including "pork chops", "ham", etc.)
+   - Seafood (including "shrimp", "salmon", "fish", etc.)
+   - Any other meat products
+
+Please analyze the user's question and provide a helpful response using this menu information. Follow these guidelines:
+
+1. For dietary preference questions (vegetarian, vegan, etc.):
+   - ONLY suggest dishes that are TRULY suitable for that diet
+   - If you're unsure about a dish's ingredients, DO NOT suggest it
+   - If there are no suitable options, clearly state that
+   - NEVER assume a dish is vegetarian just because it has vegetables
+   - If asked about vegetarian options and none are available, say: "I apologize, but I don't see any vegetarian options on our current menu. Would you like me to help you find dishes that could be modified to be vegetarian, or would you prefer to speak with our staff about special dietary requirements?"
+
+2. For specific dish or category questions:
+   - Look for relevant items in the menu
+   - Provide details about the dishes, including ingredients and sides
+   - If multiple items match, list a few options
+   - Be specific about what comes with each dish
+
+3. If the user's question isn't directly answered by the menu:
+   - Acknowledge that
+   - Suggest some popular or notable dishes
+   - Offer to help them find something specific
+   - If it's a dietary question with no suitable options, be honest about it
+
+4. Keep your response:
+   - Natural and conversational
+   - Focused on the most relevant information
+   - Concise but informative
+   - Helpful in guiding their decision
+   - Honest about limitations or lack of options`
+  } else {
+    return `Tool: ${r.tool}
+Status: ${r.success ? 'Success' : 'Failed'}
+Message: ${r.message}
+${r.data ? `Data: ${r.data}` : ''}`
+  }
+}).join('\n\n')}`
+
+              const followUpResponse = await aiService.generateResponse(
+                followUpPrompt,
+                callSession.callSid,
+                {
+                  maxTokens: 250,  // Increased to allow for more detailed menu responses
+                  temperature: 0.7
+                }
+              )
+
+              logger.info('🤖 Follow-up response generated', {
+                callSid: callSession.callSid,
+                response: followUpResponse.substring(0, 100)
+              })
+
+              // Convert follow-up response to speech
+              console.log('📝 Converting follow-up to speech:', followUpResponse)
+              const followUpAudio = await elevenlabsService.textToSpeech(followUpResponse)
+              await sendAudioToTwilio(followUpAudio)
+            }
           } else {
-            // If no tool calls, just send the audio normally
-            await sendAudioToTwilio(audioBuffer)
+            // If no tool calls, just send the initial audio
+            await sendAudioToTwilio(initialAudioBuffer)
           }
 
         } catch (error) {
@@ -585,16 +752,16 @@ async function start() {
             connection.sendUTF(JSON.stringify(audioMessage))
             chunkIndex++
           }
-          
+
           // Send mark message immediately after last chunk
           const markMessage = {
-            event: 'mark',
+              event: 'mark',
             streamSid: streamSid,
-            mark: {
+              mark: {
               name: markName || `audio_${Date.now()}`
-            }
+              }
           }
-          
+
           connection.sendUTF(JSON.stringify(markMessage))
           
           logger.info('🔊 Audio sent to Twilio', { 
