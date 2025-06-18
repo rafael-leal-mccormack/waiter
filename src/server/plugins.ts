@@ -18,7 +18,7 @@ export async function registerPlugins(app: ReturnType<typeof fastify>) {
     
     // Register JSON parser explicitly
     app.addContentTypeParser('application/json', { parseAs: 'string' }, function (
-      req: FastifyRequest,
+      _: FastifyRequest,
       body: string,
       done: (err: Error | null, result?: any) => void
     ) {

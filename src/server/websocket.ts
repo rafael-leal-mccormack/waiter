@@ -1,4 +1,4 @@
-import { server as WebSocketServer, request as WebSocketRequest, connection as WebSocketConnection } from 'websocket'
+import { server as WebSocketServer, request as WebSocketRequest } from 'websocket'
 import http from 'http'
 import logger from '../utils/logger'
 import { ServerState } from './types'
